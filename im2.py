@@ -3,41 +3,23 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# Konfiguracja strony
 st.set_page_config(
     page_title="Model Marczuka - Porównywarka",
     layout="wide",
     page_icon=""
 )
 
-# Inicjalizacja pamięci sesji
-# Lista runs przechowuje wszystkie dodane przebiegi symulacji
+# Lista wszystkich wykresów które chciał dodać użytkownik
+
 if 'runs' not in st.session_state:
     st.session_state.runs = []
 
-# Kolory dla kolejnych przebiegów
 COLORS = ['#00f2fe', '#ff0844', '#00ff00', '#ffeb3b', '#aa00ff', '#ff9800']
 
 
-# --- Funkcja rozwiązująca model ---
-def simulate_marczuk(
-    beta,
-    alpha,
-    tau,
-    V0,
-    t_max,
-    gamma,
-    mu_c,
-    c_star,
-    rho,
-    mu_f,
-    eta,
-    sigma,
-    mu_m,
-    m_star
-):
+def simulate_marczuk(beta, alpha, tau, V0, t_max, gamma, mu_c, c_star, rho, mu_f, eta, sigma, mu_m, m_star):
     """
-    Funkcja wykonuje symulację Modelu Marczuka.
+    Parapetry potrzebne do użycia modelu:
 
     Zmienne modelu:
     V - zagęszczenie antygenu / poziom infekcji
@@ -62,27 +44,21 @@ def simulate_marczuk(
     mu_m - tempo regeneracji organu
     m_star - próg uszkodzenia organu
     """
-
-    # Krok czasowy metody Eulera
+#ilość i długość kroku, do wyznaczania wykresów
     dt = 0.005
-
-    # Liczba kroków symulacji
     steps = int(t_max / dt)
-
-    # Liczba kroków odpowiadająca opóźnieniu tau
     delay_steps = max(1, int(tau / dt))
 
-    # Inicjalizacja zmiennych modelu
     V = V0
     C = c_star
     F = (rho * c_star) / mu_f
     m = 0.0
 
-    # Historia wartości potrzebna do obsługi opóźnienia reakcji
+# Zmienne pokazujące wartości dla danych z opóźnieniem, czyli przesunięcie w czasie zjawisk
     V_hist = np.ones(delay_steps) * V
     F_hist = np.ones(delay_steps) * F
 
-    # Zapisywanie wyników co 10 kroków, żeby nie przechowywać zbyt wielu punktów
+# zmniejszenie ilosci puntów bez utraty wyników
     save_steps = steps // 10
 
     t_arr = np.zeros(save_steps)
@@ -95,12 +71,10 @@ def simulate_marczuk(
 
     for i in range(steps):
 
-        # Zapis wyników do tablic
         if i % 10 == 0:
             t_arr[idx] = i * dt
 
-            # Zabezpieczenie przed log(0) na wykresach logarytmicznych
-            V_arr[idx] = max(V, 1e-6)
+            V_arr[idx] = max(V, 1e-6) #by nie przyjeło wartosci log(0)
 
             C_arr[idx] = C
             F_arr[idx] = F
@@ -108,38 +82,32 @@ def simulate_marczuk(
 
             idx += 1
 
-        # Pobranie wartości opóźnionych
+        # Pobranie wartości opóźnionych i aktualizacja historii
         V_delay = V_hist[i % delay_steps]
         F_delay = F_hist[i % delay_steps]
-
-        # Aktualizacja historii
         V_hist[i % delay_steps] = V
         F_hist[i % delay_steps] = F
 
         # Funkcja osłabienia odporności xi(m)
-        # Jeśli uszkodzenie organu jest mniejsze od progu, odporność działa normalnie.
+        # Jeśli uszkodzenie organu jest mniejsze od progu uszkodzenia, odporność działa normalnie.
         # Po przekroczeniu progu m_star odporność zaczyna słabnąć.
         if m < m_star:
             xi = 1.0
         else:
             xi = max(0.0, 1.0 - (m - m_star) / (1.0 - m_star))
 
-        # Równania modelu
+
         dV = (beta - gamma * F) * V
-
         dC = alpha * xi * V_delay * F_delay - mu_c * (C - c_star)
-
         dF = rho * C - (mu_f + eta * gamma * V) * F
-
         dm = sigma * V - mu_m * m
 
-        # Aktualizacja zmiennych metodą Eulera
         V += dV * dt
         C += dC * dt
         F += dF * dt
         m += dm * dt
 
-        # Ograniczenia biologiczne / numeryczne
+        # Ograniczenia 
         V = max(0, V)
         C = max(0, C)
         F = max(0, F)
@@ -148,9 +116,7 @@ def simulate_marczuk(
     return t_arr, V_arr, C_arr, F_arr, m_arr
 
 
-# --- Interfejs boczny ---
 st.sidebar.title("Parametry symulacji")
-
 st.sidebar.subheader("Parametry główne")
 
 beta = st.sidebar.slider(
@@ -184,7 +150,6 @@ V0 = st.sidebar.number_input(
 )
 
 
-# Parametry fizjologiczne modelu
 with st.sidebar.expander("Parametry fizjologiczne modelu", expanded=False):
 
     gamma = st.slider(
@@ -260,13 +225,12 @@ with st.sidebar.expander("Parametry fizjologiczne modelu", expanded=False):
     )
 
 
-# Przyciski sterujące
 col1, col2 = st.sidebar.columns(2)
 
 with col1:
     if st.button("Dodaj przebieg", use_container_width=True):
 
-        # Obliczenie symulacji
+        # Wywołanie funkcji
         t, V, C, F, m = simulate_marczuk(
             beta=beta,
             alpha=alpha,
@@ -284,13 +248,11 @@ with col1:
             m_star=m_star
         )
 
-        # Etykieta widoczna w legendzie wykresów
         label = (
             f"β={beta}, α={alpha}, τ={tau}, V₀={V0}, "
             f"γ={gamma}, μc={mu_c}, ρ={rho}, μf={mu_f}"
         )
 
-        # Zapis przebiegu w pamięci sesji
         st.session_state.runs.append({
             'label': label,
             't': t,
@@ -306,11 +268,12 @@ with col2:
         st.rerun()
 
 
-# --- Widok główny ---
 st.title("Wielowariantowa Analiza Modelu Marczuka")
+
 
 st.markdown(
     """
+    Aplikacja została utworzona w ramach realizacji pracy dyplomowej na Wydziale Informatyki Politechniki Białostockiej.
     Aplikacja umożliwia porównywanie wielu wariantów symulacji modelu.
     Każdy przebieg odpowiada jednemu zestawowi parametrów wybranemu w panelu bocznym.
     """
@@ -324,7 +287,7 @@ if not st.session_state.runs:
 
 else:
 
-    # Siatka wykresów 3x2
+#rozmairy wykresów
     fig = make_subplots(
         rows=3,
         cols=2,
@@ -338,7 +301,7 @@ else:
         )
     )
 
-    # Rysowanie wszystkich zapisanych przebiegów
+    # Rysowanie wszystkich przebiegów
     for idx, run in enumerate(st.session_state.runs):
 
         color = COLORS[idx % len(COLORS)]
@@ -432,7 +395,6 @@ else:
             col=2
         )
 
-    # Opisy osi
     fig.update_yaxes(
         title_text="Zagęszczenie V",
         type="log",
@@ -508,7 +470,6 @@ else:
         col=2
     )
 
-    # Ustawienia wyglądu wykresów
     fig.update_layout(
         height=1100,
         template="plotly_dark",
